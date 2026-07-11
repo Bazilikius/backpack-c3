@@ -1,0 +1,7 @@
+.pio/
+.pioobjs/
+.piolibdeps/
+*.o
+*.d
+*.elf
+*.bin
