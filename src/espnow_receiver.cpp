@@ -353,15 +353,27 @@ void update_wifi_tx_power(int power_val) {
 }
 
 void init_espnow() {
-    // Stop WiFi AP if it's already active, start STA
+    // Initialize WiFi STA mode
     WiFi.mode(WIFI_AP_STA);
+
+    // Stop WiFi driver temporarily to allow setting custom MAC
+    esp_wifi_stop();
 
     // Set Station MAC address to UID matching the official ExpressLRS Backpack protocol
     uint8_t mac_addr[6];
     memcpy(mac_addr, global_config.uid, 6);
     mac_addr[0] &= 0xFE; // Force unicast (clear multicast bit)
 
-    esp_wifi_set_mac(WIFI_IF_STA, mac_addr);
+    esp_err_t err = esp_wifi_set_mac(WIFI_IF_STA, mac_addr);
+    if (err != ESP_OK) {
+        Serial.printf("[SYSTEM] Failed to set STA MAC: %s\n", esp_err_to_name(err));
+    } else {
+        Serial.printf("[SYSTEM] STA MAC successfully set to: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                      mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+    }
+
+    // Restart WiFi driver
+    esp_wifi_start();
 
     // Set WiFi channel to 1 for ESP-NOW Backpack communication
     esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
