@@ -356,12 +356,10 @@ void init_espnow() {
     // Stop WiFi AP if it's already active, start STA
     WiFi.mode(WIFI_AP_STA);
 
-    // Set Station MAC address to UID
-    // On ESP32, if the last byte of MAC is changed, we should make sure the LSB of the first byte is 0 (unicast)
+    // Set Station MAC address to UID matching the official ExpressLRS Backpack protocol
     uint8_t mac_addr[6];
     memcpy(mac_addr, global_config.uid, 6);
-    mac_addr[0] &= 0xFE; // Force unicast
-    mac_addr[0] |= 0x02; // Force locally administered
+    mac_addr[0] &= 0xFE; // Force unicast (clear multicast bit)
 
     esp_wifi_set_mac(WIFI_IF_STA, mac_addr);
 
@@ -386,32 +384,11 @@ void start_binding_mode() {
     is_binding_mode = true;
     binding_mode_start_time = millis();
     Serial.println("[BIND] Starting bind mode: listening for valid packets...");
-
-    // Stop current ESP-NOW session
-    stop_espnow();
-
-    // Configure station MAC to default factory MAC to listen promiscuously for any ESP-NOW frame
-    WiFi.mode(WIFI_AP_STA);
-    uint8_t default_mac[6] = {0};
-    esp_read_mac(default_mac, ESP_MAC_WIFI_STA);
-    esp_wifi_set_mac(WIFI_IF_STA, default_mac);
-
-    // Set WiFi channel to 1 for ESP-NOW Backpack communication
-    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
-
-    // Initialize ESP-NOW
-    if (esp_now_init() == ESP_OK) {
-        esp_now_register_recv_cb(on_data_recv_cb);
-    }
 }
 
 void check_binding_timeout() {
     if (is_binding_mode && (millis() - binding_mode_start_time > 30000)) {
         is_binding_mode = false;
         Serial.println("[BIND] Timeout. Exiting bind mode...");
-
-        // Restart normal ESP-NOW
-        stop_espnow();
-        init_espnow();
     }
 }
