@@ -82,10 +82,10 @@ void process_espnow_channels(uint16_t* channels) {
     uint16_t val_s2 = channels[idx_s2];
 
     if (global_config.control_mode == 0) {
-        // Mode 0: 6pos selects Band (1-6), S2 selects Channel (1-8)
+        // Mode 0: 6pos selects Band A-L (Bands 0-5), S2 selects Channel 1-8 (Channels 0-7)
 
         // 6pos mapping (6 regions)
-        // Range 172 to 1811 (center around 992)
+        // CRSF Range 172 to 1811 (center around 992)
         if (val_6pos < 440) {
             selected_band = 0; // Band A
         } else if (val_6pos < 710) {
@@ -100,23 +100,23 @@ void process_espnow_channels(uint16_t* channels) {
             selected_band = 5; // Band L
         }
 
-        // S2 continuous knob mapping (8 regions of ~205 width)
+        // S2 continuous knob mapping (8 regions of ~205 width across 172-1811 range)
         if (val_s2 < 377) {
-            selected_channel = 0;
+            selected_channel = 0; // Channel 1
         } else if (val_s2 < 582) {
-            selected_channel = 1;
+            selected_channel = 1; // Channel 2
         } else if (val_s2 < 787) {
-            selected_channel = 2;
+            selected_channel = 2; // Channel 3
         } else if (val_s2 < 992) {
-            selected_channel = 3;
+            selected_channel = 3; // Channel 4
         } else if (val_s2 < 1197) {
-            selected_channel = 4;
+            selected_channel = 4; // Channel 5
         } else if (val_s2 < 1402) {
-            selected_channel = 5;
+            selected_channel = 5; // Channel 6
         } else if (val_s2 < 1607) {
-            selected_channel = 6;
+            selected_channel = 6; // Channel 7
         } else {
-            selected_channel = 7;
+            selected_channel = 7; // Channel 8
         }
 
     } else if (global_config.control_mode == 1) {

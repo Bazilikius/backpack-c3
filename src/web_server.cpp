@@ -147,6 +147,45 @@ const char index_html[] PROGMEM = R"rawliteral(
             line-height: 18px;
             top: 0;
         }
+        .vtx-table-container {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+        .vtx-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+            text-align: center;
+        }
+        .vtx-table th, .vtx-table td {
+            padding: 8px 4px;
+            border: 1px solid #333;
+        }
+        .vtx-table th {
+            background-color: #262626;
+            color: #ff5722;
+            font-weight: bold;
+        }
+        .vtx-table td.band-label {
+            background-color: #262626;
+            color: #fff;
+            font-weight: bold;
+        }
+        .vtx-table td.freq-cell {
+            background-color: #1e1e1e;
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .vtx-table td.freq-cell:hover {
+            background-color: #ff5722;
+            color: #fff;
+        }
+        .vtx-table td.active-freq {
+            background-color: #ff5722 !important;
+            color: #fff !important;
+            font-weight: bold;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body>
@@ -191,6 +230,29 @@ const char index_html[] PROGMEM = R"rawliteral(
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Interactive VTX Frequency Table -->
+            <div class="vtx-table-container">
+                <h3>VTX Frequency Table</h3>
+                <table class="vtx-table">
+                    <thead>
+                        <tr>
+                            <th>Band</th>
+                            <th>CH 1</th>
+                            <th>CH 2</th>
+                            <th>CH 3</th>
+                            <th>CH 4</th>
+                            <th>CH 5</th>
+                            <th>CH 6</th>
+                            <th>CH 7</th>
+                            <th>CH 8</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vtx-table-body">
+                        <!-- Dynamically populated via JS -->
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -302,8 +364,54 @@ const char index_html[] PROGMEM = R"rawliteral(
             }
         }
 
-        // Live stats update loop
-        setInterval(function() {
+        // VTX Frequencies Table Data
+        const bandNames = ["A", "B", "E", "F", "R", "L", "D", "U", "O", "H"];
+        const frequencies = [
+            [5865, 5845, 5825, 5805, 5785, 5765, 5745, 5725], // Band A
+            [5733, 5752, 5771, 5790, 5809, 5828, 5847, 5866], // Band B
+            [5705, 5685, 5665, 5645, 5885, 5905, 5925, 5945], // Band E
+            [5740, 5760, 5780, 5800, 5820, 5840, 5860, 5880], // Band F
+            [5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917], // Band R
+            [5333, 5373, 5413, 5453, 5493, 5533, 5573, 5613], // Band L
+            [5362, 5399, 5436, 5473, 5510, 5547, 5584, 5621], // Band D
+            [5325, 5348, 5366, 5384, 5402, 5420, 5438, 5456], // Band U
+            [5474, 5492, 5510, 5528, 5546, 5564, 5582, 5600], // Band O
+            [5653, 5693, 5733, 5773, 5813, 5853, 5893, 5933]  // Band H
+        ];
+
+        function selectChannel(bandIdx, chIdx) {
+            fetch(`/select?band=${bandIdx}&channel=${chIdx}`)
+                .then(response => response.json())
+                .then(data => {
+                    if(data.status === "ok") {
+                        updateStatus();
+                    }
+                });
+        }
+
+        function renderVTXTable() {
+            const tbody = document.getElementById("vtx-table-body");
+            tbody.innerHTML = "";
+            for (let b = 0; b < frequencies.length; b++) {
+                const tr = document.createElement("tr");
+                const tdLabel = document.createElement("td");
+                tdLabel.className = "band-label";
+                tdLabel.innerText = "Band " + bandNames[b];
+                tr.appendChild(tdLabel);
+
+                for (let c = 0; c < frequencies[b].length; c++) {
+                    const tdFreq = document.createElement("td");
+                    tdFreq.className = "freq-cell";
+                    tdFreq.id = `cell-${b}-${c}`;
+                    tdFreq.innerText = frequencies[b][c];
+                    tdFreq.onclick = () => selectChannel(b, c);
+                    tr.appendChild(tdFreq);
+                }
+                tbody.appendChild(tr);
+            }
+        }
+
+        function updateStatus() {
             fetch('/status')
                 .then(response => response.json())
                 .then(data => {
@@ -328,10 +436,21 @@ const char index_html[] PROGMEM = R"rawliteral(
 
                     document.getElementById("6pos-ch-num").innerText = data.ch_6pos_num;
                     document.getElementById("s2-ch-num").innerText = data.ch_s2_num;
+
+                    // Highlight active cell in VTX Table
+                    document.querySelectorAll('.freq-cell').forEach(el => el.classList.remove('active-freq'));
+                    const activeCell = document.getElementById(`cell-${data.active_band}-${data.active_channel}`);
+                    if (activeCell) {
+                        activeCell.classList.add('active-freq');
+                    }
                 });
-        }, 300);
+        }
+
+        // Live stats update loop
+        setInterval(updateStatus, 300);
 
         // Initial calls
+        renderVTXTable();
         updateUID();
         togglePresets();
     </script>
@@ -406,6 +525,8 @@ void handle_root() {
 void handle_status() {
     String json = "{";
     json += "\"active_freq\":" + String(current_selected_freq) + ",";
+    json += "\"active_band\":" + String(current_selected_band) + ",";
+    json += "\"active_channel\":" + String(current_selected_channel) + ",";
 
     const char* band_names[] = {"A", "B", "E", "F", "R", "L", "D", "U", "O", "H"};
     String ch_name = String(band_names[current_selected_band]) + String(current_selected_channel + 1);
@@ -439,6 +560,25 @@ void handle_status() {
     json += "}";
 
     server.send(200, "application/json", json);
+}
+
+void handle_select() {
+    if (server.hasArg("band") && server.hasArg("channel")) {
+        int band = server.arg("band").toInt();
+        int channel = server.arg("channel").toInt();
+
+        if (band >= 0 && band < 10 && channel >= 0 && channel < 8) {
+            current_selected_band = band;
+            current_selected_channel = channel;
+            current_selected_freq = b_frequencies[band][channel];
+
+            handle_vrx_change(current_selected_band, current_selected_channel, current_selected_freq);
+
+            server.send(200, "application/json", "{\"status\":\"ok\"}");
+            return;
+        }
+    }
+    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"invalid band or channel\"}");
 }
 
 void handle_save() {
@@ -498,6 +638,7 @@ void init_web_server() {
 
     server.on("/", handle_root);
     server.on("/status", handle_status);
+    server.on("/select", HTTP_GET, handle_select);
     server.on("/save", HTTP_POST, handle_save);
 
     server.begin();
