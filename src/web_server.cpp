@@ -670,8 +670,9 @@ void handle_save() {
 }
 
 void init_web_server() {
-    // Start local Access Point for configuration
-    WiFi.softAP("ELRS_Backpack_VRX_S3", ""); // open SSID
+    // Start local Access Point for configuration on Channel 1
+    // Parameter 3: Channel 1, Parameter 4: SSID Hidden (0/false), Parameter 5: Max Connections (4)
+    WiFi.softAP("ELRS_Backpack_VRX_S3", "", 1, 0, 4);
 
     server.on("/", handle_root);
     server.on("/status", handle_status);
