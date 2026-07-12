@@ -12,6 +12,9 @@ uint8_t current_selected_band = 4;    // Default: Band R (Raceband)
 uint8_t current_selected_channel = 0; // Default: Channel 1 (0)
 uint16_t current_selected_freq = 5658;  // Default: R1 (5658 MHz)
 
+bool is_binding_mode = false;
+uint32_t binding_mode_start_time = 0;
+
 // 10 bands x 8 channels frequency table
 const uint16_t b_frequencies[10][8] = {
     {5865, 5845, 5825, 5805, 5785, 5765, 5745, 5725}, // Band A (0)
@@ -190,6 +193,44 @@ void on_data_recv_cb(const uint8_t *mac, const uint8_t *data, int len) {
 
     if (len < 4) return;
 
+    if (is_binding_mode) {
+        bool valid_packet = false;
+
+        // 1. Check for standard CRSF sync bytes
+        uint8_t sync = data[0];
+        if (sync == 0xEE || sync == 0xC8 || sync == 0xEA || sync == 0xC4) {
+            uint8_t crsf_len = data[1];
+            if (crsf_len + 2 <= len) {
+                uint8_t expected_crc = data[crsf_len + 1];
+                uint8_t calculated_crc = crsf_crc8(&data[2], crsf_len - 1);
+                if (expected_crc == calculated_crc) {
+                    valid_packet = true;
+                }
+            }
+        }
+        // 2. Check for standard MSP packet signature
+        else if (data[0] == '$' && data[1] == 'M' && data[2] == '<') {
+            valid_packet = true;
+        }
+
+        if (valid_packet) {
+            is_binding_mode = false;
+
+            // Set learned MAC as UID, save it and clear/update binding phrase
+            memcpy(global_config.uid, mac, 6);
+            strcpy(global_config.binding_phrase, "bound via button");
+            save_config();
+
+            Serial.printf("[BIND] Successfully bound to TX with MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+            // Restart normal ESP-NOW with newly saved MAC/UID
+            stop_espnow();
+            init_espnow();
+            return;
+        }
+    }
+
     // Try to parse CRSF frame
     // Sync byte is normally 0xEE (RC), 0xC8 (Telem to FC), 0xEA (Telem from handset)
     uint8_t sync = data[0];
@@ -261,4 +302,35 @@ void init_espnow() {
 void stop_espnow() {
     esp_now_unregister_recv_cb();
     esp_now_deinit();
+}
+
+void start_binding_mode() {
+    is_binding_mode = true;
+    binding_mode_start_time = millis();
+    Serial.println("[BIND] Starting bind mode: listening for valid packets...");
+
+    // Stop current ESP-NOW session
+    stop_espnow();
+
+    // Configure station MAC to default factory MAC to listen promiscuously for any ESP-NOW frame
+    WiFi.mode(WIFI_AP_STA);
+    uint8_t default_mac[6] = {0};
+    esp_read_mac(default_mac, ESP_MAC_WIFI_STA);
+    esp_wifi_set_mac(WIFI_IF_STA, default_mac);
+
+    // Initialize ESP-NOW
+    if (esp_now_init() == ESP_OK) {
+        esp_now_register_recv_cb(on_data_recv_cb);
+    }
+}
+
+void check_binding_timeout() {
+    if (is_binding_mode && (millis() - binding_mode_start_time > 30000)) {
+        is_binding_mode = false;
+        Serial.println("[BIND] Timeout. Exiting bind mode...");
+
+        // Restart normal ESP-NOW
+        stop_espnow();
+        init_espnow();
+    }
 }

@@ -32,6 +32,9 @@ void loop() {
     // Handle Web Server Clients
     handle_web_server();
 
+    // Check if the ESP-NOW binding has timed out
+    check_binding_timeout();
+
     // Tiny delay to keep background tasks happy
     delay(1);
 }

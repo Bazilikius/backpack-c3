@@ -121,6 +121,9 @@ const char index_html[] PROGMEM = R"rawliteral(
         .badge.connected {
             background-color: #388e3c;
         }
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
         .channel-bar-container {
             margin-top: 10px;
         }
@@ -260,9 +263,12 @@ const char index_html[] PROGMEM = R"rawliteral(
             <!-- Binding Phrase Card -->
             <div class="card">
                 <h2>Binding Phrase & WiFi Configuration</h2>
-                <div class="form-group">
-                    <label for="phrase">Binding Phrase</label>
-                    <input type="text" id="phrase" name="phrase" value="PLACEHOLDER_PHRASE" oninput="updateUID()">
+                <div class="form-group" style="display: flex; gap: 10px; align-items: flex-end;">
+                    <div style="flex-grow: 1;">
+                        <label for="phrase">Binding Phrase</label>
+                        <input type="text" id="phrase" name="phrase" value="PLACEHOLDER_PHRASE" oninput="updateUID()">
+                    </div>
+                    <button type="button" id="bind-btn" class="btn" style="margin-top: 0; width: auto; height: 38px; padding: 0 20px; white-space: nowrap;" onclick="startBinding()">Start Bind</button>
                 </div>
                 <div class="form-group">
                     <label>Computed UID (6 bytes)</label>
@@ -379,6 +385,16 @@ const char index_html[] PROGMEM = R"rawliteral(
             [5653, 5693, 5733, 5773, 5813, 5853, 5893, 5933]  // Band H
         ];
 
+        function startBinding() {
+            fetch('/bind')
+                .then(response => response.json())
+                .then(data => {
+                    if(data.status === "ok") {
+                        updateStatus();
+                    }
+                });
+        }
+
         function selectChannel(bandIdx, chIdx) {
             fetch(`/select?band=${bandIdx}&channel=${chIdx}`)
                 .then(response => response.json())
@@ -418,10 +434,18 @@ const char index_html[] PROGMEM = R"rawliteral(
                     document.getElementById("tuned-freq").innerText = data.active_freq + " MHz";
                     document.getElementById("tuned-channel").innerText = data.active_channel_name;
 
-                    if (data.espnow_receiving) {
-                        document.getElementById("link-status").innerHTML = '<span class="badge connected">CONNECTED</span>';
+                    if (data.is_binding_mode) {
+                        document.getElementById("link-status").innerHTML = `<span class="badge" style="background-color: #ffb300; animation: blinker 1s linear infinite;">BINDING (${data.binding_remaining}s)</span>`;
+                        document.getElementById("bind-btn").innerText = "Binding...";
+                        document.getElementById("bind-btn").disabled = true;
                     } else {
-                        document.getElementById("link-status").innerHTML = '<span class="badge">DISCONNECTED</span>';
+                        document.getElementById("bind-btn").innerText = "Start Bind";
+                        document.getElementById("bind-btn").disabled = false;
+                        if (data.espnow_receiving) {
+                            document.getElementById("link-status").innerHTML = '<span class="badge connected">CONNECTED</span>';
+                        } else {
+                            document.getElementById("link-status").innerHTML = '<span class="badge">DISCONNECTED</span>';
+                        }
                     }
 
                     // Update channels
@@ -535,6 +559,14 @@ void handle_status() {
     bool receiving = (millis() - last_packet_time < 3000);
     json += "\"espnow_receiving\":" + String(receiving ? "true" : "false") + ",";
 
+    json += "\"is_binding_mode\":" + String(is_binding_mode ? "true" : "false") + ",";
+    int remaining = 0;
+    if (is_binding_mode) {
+        remaining = 30 - (millis() - binding_mode_start_time) / 1000;
+        if (remaining < 0) remaining = 0;
+    }
+    json += "\"binding_remaining\":" + String(remaining) + ",";
+
     json += "\"ch_6pos_num\":" + String(global_config.ch_6pos) + ",";
     json += "\"ch_s2_num\":" + String(global_config.ch_s2) + ",";
 
@@ -560,6 +592,11 @@ void handle_status() {
     json += "}";
 
     server.send(200, "application/json", json);
+}
+
+void handle_bind() {
+    start_binding_mode();
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
 void handle_select() {
@@ -638,6 +675,7 @@ void init_web_server() {
 
     server.on("/", handle_root);
     server.on("/status", handle_status);
+    server.on("/bind", HTTP_GET, handle_bind);
     server.on("/select", HTTP_GET, handle_select);
     server.on("/save", HTTP_POST, handle_save);
 

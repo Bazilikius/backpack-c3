@@ -13,8 +13,13 @@ extern uint16_t current_selected_freq;   // Frequency in MHz
 
 extern const uint16_t b_frequencies[10][8];
 
+extern bool is_binding_mode;
+extern uint32_t binding_mode_start_time;
+
 void init_espnow();
 void stop_espnow();
+void start_binding_mode();
+void check_binding_timeout();
 void process_espnow_channels(uint16_t* channels);
 void update_wifi_tx_power(int power_val);
 
