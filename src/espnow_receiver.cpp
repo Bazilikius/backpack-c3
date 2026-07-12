@@ -361,7 +361,6 @@ void init_espnow() {
     uint8_t mac_addr[6];
     memcpy(mac_addr, global_config.uid, 6);
     mac_addr[0] &= 0xFE; // Force unicast
-    mac_addr[0] |= 0x02; // Force locally administered
 
     esp_wifi_set_mac(WIFI_IF_STA, mac_addr);
 
