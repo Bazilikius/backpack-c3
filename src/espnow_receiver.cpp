@@ -372,6 +372,21 @@ void init_espnow() {
                       mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
     }
 
+    // Set AP MAC address explicitly to be distinct and valid (forcing locally-administered 0x02 bit)
+    // to prevent the ESP WiFi driver from failing to start the SoftAP interface.
+    uint8_t ap_mac[6];
+    memcpy(ap_mac, mac_addr, 6);
+    ap_mac[0] |= 0x02; // Force locally administered on AP MAC
+    ap_mac[5] ^= 1;    // Ensure last byte is different from STA MAC to avoid collisions
+
+    err = esp_wifi_set_mac(WIFI_IF_AP, ap_mac);
+    if (err != ESP_OK) {
+        Serial.printf("[SYSTEM] Failed to set AP MAC: %s\n", esp_err_to_name(err));
+    } else {
+        Serial.printf("[SYSTEM] AP MAC successfully set to: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                      ap_mac[0], ap_mac[1], ap_mac[2], ap_mac[3], ap_mac[4], ap_mac[5]);
+    }
+
     // Restart WiFi driver
     esp_wifi_start();
 
