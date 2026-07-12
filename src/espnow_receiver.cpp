@@ -48,6 +48,28 @@ uint8_t crsf_crc8(const uint8_t *data, uint8_t len) {
     return crc;
 }
 
+// MSP v2 CRC8-DVB-S2 calculation using polynomial 0xD5
+uint8_t crc8_dvb_s2_one_byte(uint8_t crc, uint8_t a) {
+    crc ^= a;
+    for (int i = 0; i < 8; i++) {
+        if (crc & 0x80) {
+            crc = (crc << 1) ^ 0xD5;
+        } else {
+            crc <<= 1;
+        }
+    }
+    return crc;
+}
+
+uint8_t calculate_msp_v2_crc8(const uint8_t *packet, uint16_t len) {
+    uint8_t crc = 0;
+    // CRC is calculated over bytes from index 2 up to len - 2 (type, flags, function, size, payload)
+    for (uint16_t i = 2; i < len - 1; i++) {
+        crc = crc8_dvb_s2_one_byte(crc, packet[i]);
+    }
+    return crc;
+}
+
 // Unpack CRSF channels data from 22-byte packed representation
 void unpack_crsf_channels(const uint8_t* payload, uint16_t* channels) {
     channels[0]  = (payload[0]  | (payload[1]  << 8))                    & 0x07FF;
@@ -193,10 +215,64 @@ void on_data_recv_cb(const uint8_t *mac, const uint8_t *data, int len) {
 
     if (len < 4) return;
 
-    if (is_binding_mode) {
-        bool valid_packet = false;
+    // Raw MSP v2 Over ESP-NOW Parsing & Binding logic
+    if (len >= 9 && data[0] == '$' && data[1] == 'X') {
+        uint8_t type = data[2]; // '<' or '>'
+        uint16_t function = data[4] | (data[5] << 8);
+        uint16_t size = data[6] | (data[7] << 8);
 
-        // 1. Check for standard CRSF sync bytes
+        if (size + 9 <= len) {
+            uint8_t expected_crc = data[size + 8];
+            uint8_t calculated_crc = calculate_msp_v2_crc8(data, size + 9);
+
+            if (expected_crc == calculated_crc) {
+                const uint8_t* payload = &data[8];
+
+                // 1. Handle official MSP_ELRS_BIND (0x0009) packet in binding mode
+                if (is_binding_mode && function == 0x0009) {
+                    if (size >= 6) {
+                        is_binding_mode = false;
+
+                        // Extract official binding UID (first 6 bytes of bind payload)
+                        memcpy(global_config.uid, payload, 6);
+                        strcpy(global_config.binding_phrase, "bound via button");
+                        save_config();
+
+                        Serial.printf("[BIND] MSP_ELRS_BIND successful! UID: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                                      global_config.uid[0], global_config.uid[1], global_config.uid[2],
+                                      global_config.uid[3], global_config.uid[4], global_config.uid[5]);
+
+                        stop_espnow();
+                        init_espnow();
+                        return;
+                    }
+                }
+
+                // 2. Handle official MSP_SET_VTX_CONFIG (0x0059)
+                if (function == 0x0059) {
+                    if (size >= 1) {
+                        uint8_t msp_channel_idx = payload[0]; // 0-47
+                        uint8_t msp_band = msp_channel_idx / 8;
+                        uint8_t msp_channel = msp_channel_idx % 8;
+
+                        if (msp_band < 10 && msp_channel < 8) {
+                            uint16_t freq = b_frequencies[msp_band][msp_channel];
+                            current_selected_band = msp_band;
+                            current_selected_channel = msp_channel;
+                            current_selected_freq = freq;
+
+                            handle_vrx_change(current_selected_band, current_selected_channel, current_selected_freq);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback simple binding mode if no MSP_ELRS_BIND packet arrives but standard packets are received
+    if (is_binding_mode) {
+        bool fallback_valid = false;
+
         uint8_t sync = data[0];
         if (sync == 0xEE || sync == 0xC8 || sync == 0xEA || sync == 0xC4) {
             uint8_t crsf_len = data[1];
@@ -204,16 +280,15 @@ void on_data_recv_cb(const uint8_t *mac, const uint8_t *data, int len) {
                 uint8_t expected_crc = data[crsf_len + 1];
                 uint8_t calculated_crc = crsf_crc8(&data[2], crsf_len - 1);
                 if (expected_crc == calculated_crc) {
-                    valid_packet = true;
+                    fallback_valid = true;
                 }
             }
         }
-        // 2. Check for standard MSP packet signature
         else if (data[0] == '$' && data[1] == 'M' && data[2] == '<') {
-            valid_packet = true;
+            fallback_valid = true;
         }
 
-        if (valid_packet) {
+        if (fallback_valid) {
             is_binding_mode = false;
 
             // Set learned MAC as UID, save it and clear/update binding phrase
@@ -221,7 +296,7 @@ void on_data_recv_cb(const uint8_t *mac, const uint8_t *data, int len) {
             strcpy(global_config.binding_phrase, "bound via button");
             save_config();
 
-            Serial.printf("[BIND] Successfully bound to TX with MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+            Serial.printf("[BIND] Fallback bound to TX with MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
                           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
             // Restart normal ESP-NOW with newly saved MAC/UID
@@ -290,6 +365,9 @@ void init_espnow() {
 
     esp_wifi_set_mac(WIFI_IF_STA, mac_addr);
 
+    // Set WiFi channel to 1 for ESP-NOW Backpack communication
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+
     // Initialize ESP-NOW
     if (esp_now_init() == ESP_OK) {
         esp_now_register_recv_cb(on_data_recv_cb);
@@ -317,6 +395,9 @@ void start_binding_mode() {
     uint8_t default_mac[6] = {0};
     esp_read_mac(default_mac, ESP_MAC_WIFI_STA);
     esp_wifi_set_mac(WIFI_IF_STA, default_mac);
+
+    // Set WiFi channel to 1 for ESP-NOW Backpack communication
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 
     // Initialize ESP-NOW
     if (esp_now_init() == ESP_OK) {
