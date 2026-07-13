@@ -22,6 +22,12 @@ struct DeviceConfig {
     int pin_cs;
     int pin_crsf_rx; // UART CRSF RX pin
     long crsf_baud;  // UART CRSF Baud rate (default 416700)
+
+    // Legacy Mode configuration
+    // 0: RTC6715 SPI Mode only (for Rapidfire, Steadyview, SPI mods)
+    // 1: Legacy 3-bit Parallel standard mode (for Foxeer Wildfire, TBS Fusion, stock modules)
+    // 2: Legacy 3-bit Parallel inverted mode
+    int legacy_mode;
 };
 
 extern DeviceConfig global_config;

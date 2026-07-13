@@ -32,6 +32,9 @@ void reset_config_defaults() {
 #endif
 
     global_config.crsf_baud = 416700; // Standard CRSF Baud rate
+
+    // Default to Legacy 3-bit Parallel Standard Mode (1) to be compatible with Foxeer Wildfire & stock modules out of the box!
+    global_config.legacy_mode = 1;
 }
 
 void init_config() {
@@ -66,6 +69,7 @@ void load_config() {
 #endif
     );
     global_config.crsf_baud = preferences.getLong("crsf_baud", 416700);
+    global_config.legacy_mode = preferences.getInt("legacy_mode", 1); // default to legacy standard (1)
 }
 
 void save_config() {
@@ -82,4 +86,5 @@ void save_config() {
     preferences.putInt("pin_cs", global_config.pin_cs);
     preferences.putInt("pin_crsf_rx", global_config.pin_crsf_rx);
     preferences.putLong("crsf_baud", global_config.crsf_baud);
+    preferences.putInt("legacy_mode", global_config.legacy_mode);
 }

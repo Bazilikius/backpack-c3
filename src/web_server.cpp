@@ -318,21 +318,29 @@ const char index_html[] PROGMEM = R"rawliteral(
                 </div>
             </div>
 
-            <!-- SPI Hardware Pin Configuration Card -->
+            <!-- SPI Hardware Pin Configuration Card / VRX Control Protocol -->
             <div class="card">
-                <h2>SPI Pin Connections (RTC6715 bit-bang)</h2>
+                <h2>VRX Control Protocol & SPI/Legacy Pins</h2>
+                <div class="form-group">
+                    <label for="legacy_mode">Control Interface Protocol</label>
+                    <select id="legacy_mode" name="legacy_mode">
+                        <option value="0" PLACEHOLDER_LEGACY_0>SPI Register Control (Rapidfire, Steadyview, custom SPI mods)</option>
+                        <option value="1" PLACEHOLDER_LEGACY_1>Legacy 3-bit Parallel standard (Foxeer Wildfire, TBS Fusion, stock modules)</option>
+                        <option value="2" PLACEHOLDER_LEGACY_2>Legacy 3-bit Parallel inverted</option>
+                    </select>
+                </div>
                 <div class="grid-2">
                     <div class="form-group">
-                        <label for="pin_clk">SPI CLK Pin</label>
+                        <label for="pin_clk">SPI CLK / CH3 Pin</label>
                         <input type="number" id="pin_clk" name="pin_clk" value="PLACEHOLDER_PIN_CLK">
                     </div>
                     <div class="form-group">
-                        <label for="pin_data">SPI DATA Pin</label>
+                        <label for="pin_data">SPI DATA / CH1 Pin</label>
                         <input type="number" id="pin_data" name="pin_data" value="PLACEHOLDER_PIN_DATA">
                     </div>
                 </div>
                 <div class="form-group">
-                    <label for="pin_cs">SPI CS (Slave Select) Pin</label>
+                    <label for="pin_cs">SPI CS / CH2 Pin</label>
                     <input type="number" id="pin_cs" name="pin_cs" value="PLACEHOLDER_PIN_CS">
                 </div>
             </div>
@@ -524,6 +532,10 @@ void handle_root() {
     page.replace("PLACEHOLDER_PIN_DATA", String(global_config.pin_data));
     page.replace("PLACEHOLDER_PIN_CS", String(global_config.pin_cs));
 
+    page.replace("PLACEHOLDER_LEGACY_0", (global_config.legacy_mode == 0) ? "selected" : "");
+    page.replace("PLACEHOLDER_LEGACY_1", (global_config.legacy_mode == 1) ? "selected" : "");
+    page.replace("PLACEHOLDER_LEGACY_2", (global_config.legacy_mode == 2) ? "selected" : "");
+
     server.send(200, "text/html", page);
 }
 
@@ -605,6 +617,9 @@ void handle_save() {
     }
     if (server.hasArg("pin_cs")) {
         global_config.pin_cs = server.arg("pin_cs").toInt();
+    }
+    if (server.hasArg("legacy_mode")) {
+        global_config.legacy_mode = server.arg("legacy_mode").toInt();
     }
 
     // 6pos position bands
