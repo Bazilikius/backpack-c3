@@ -1,34 +1,42 @@
 #include <Arduino.h>
 #include "config_store.h"
-#include "espnow_receiver.h"
+#include "crsf_parser.h"
 #include "spi_vtx.h"
 #include "web_server.h"
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    Serial.println("\n[SYSTEM] Starting ELRS Backpack VRX Emulator...");
+    Serial.println("\n[SYSTEM] Starting direct CRSF-to-VRX Controller...");
 
     // 1. Initialize Configuration
     init_config();
-    Serial.printf("[SYSTEM] Binding Phrase: %s\n", global_config.binding_phrase);
-    Serial.printf("[SYSTEM] UID: %02X:%02X:%02X:%02X:%02X:%02X\n",
-                  global_config.uid[0], global_config.uid[1], global_config.uid[2],
-                  global_config.uid[3], global_config.uid[4], global_config.uid[5]);
 
     // 2. Initialize VTX SPI Interface
     init_spi_vtx();
 
-    // 3. Initialize ESP-NOW with configured parameters
-    init_espnow();
-
-    // 4. Initialize Web UI Server
+    // 3. Initialize Web UI Server (WiFi softAP)
     init_web_server();
 
-    Serial.println("[SYSTEM] Ready! Listening for ESP-NOW and Web UI Clients.");
+    // 4. Initialize Hardware UART for direct CRSF listening
+    // We use Serial1 (Hardware Serial 1)
+    Serial.printf("[SYSTEM] Listening for direct CRSF Serial RX on Pin %d at %ld Baud\n",
+                  global_config.pin_crsf_rx, global_config.crsf_baud);
+    crsf.begin(Serial1, global_config.crsf_baud, global_config.pin_crsf_rx);
+
+    Serial.println("[SYSTEM] Ready! Listening for CRSF Serial & Web UI Clients.");
 }
 
 void loop() {
+    // Process incoming CRSF Serial Bytes
+    crsf.handle();
+
+    // If new channels packet received, process them
+    if (crsf.updated) {
+        process_crsf_channels();
+        crsf.updated = false;
+    }
+
     // Handle Web Server Clients
     handle_web_server();
 
